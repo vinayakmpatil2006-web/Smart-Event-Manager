@@ -2,22 +2,20 @@
 #include <fstream>
 #include <vector>
 #include <string>
+#include <sstream>
 #include <algorithm>
 
 using namespace std;
 
-// Event class
+// =======================
+//  Event Class (CSV Support)
+// =======================
 class Event {
 private:
-    string name;
-    string date;   // DD-MM-YYYY
-    string time;   // HH:MM
-    string type;
-    string location;
+    string name, date, time, type, location;
 
 public:
     Event() {}
-
     Event(string n, string d, string t, string ty, string l)
         : name(n), date(d), time(t), type(ty), location(l) {}
 
@@ -28,42 +26,38 @@ public:
     string getLocation() const { return location; }
 
     void display() const {
-        cout << "\nEvent: " << name
-             << "\nDate: " << date
-             << "\nTime: " << time
-             << "\nType: " << type
-             << "\nLocation: " << location << "\n";
+        cout << "\n Event: " << name
+             << "\n Date: " << date
+             << "\n Time: " << time
+             << "\n Type: " << type
+             << "\n Location: " << location << "\n";
     }
 
-    string serialize() const {
-        return name + "|" + date + "|" + time + "|" + type + "|" + location + "\n";
+    string toCSV() const {
+        return name + "," + date + "," + time + "," + type + "," + location;
     }
 
-    static Event deserialize(const string& line) {
-        size_t pos = 0;
-        string temp = line;
+    static Event fromCSV(const string& line) {
         vector<string> parts;
-
-        while ((pos = temp.find('|')) != string::npos) {
-            parts.push_back(temp.substr(0, pos));
-            temp.erase(0, pos + 1);
-        }
-        parts.push_back(temp);
-
-        if (parts.size() < 5) {
-            return Event();
+        stringstream ss(line);
+        string token;
+        while (getline(ss, token, ',')) {
+            parts.push_back(token);
         }
 
+        if (parts.size() < 5) return Event();
         return Event(parts[0], parts[1], parts[2], parts[3], parts[4]);
     }
 };
 
-// Event Manager class
+// =======================
+//  EventManager Class
+// =======================
 class EventManager {
 private:
     vector<Event> events;
 
-    static string toLower(const string& s) {
+    string toLower(const string& s) const {
         string result = s;
         transform(result.begin(), result.end(), result.begin(), ::tolower);
         return result;
@@ -71,19 +65,22 @@ private:
 
 public:
     void loadEvents(const string& filename) {
+        events.clear();
         ifstream file(filename);
         string line;
         while (getline(file, line)) {
-            if (!line.empty())
-                events.push_back(Event::deserialize(line));
+            if (!line.empty()) {
+                Event e = Event::fromCSV(line);
+                events.push_back(e);
+            }
         }
         file.close();
     }
 
-    void saveEvents(const string& filename) {
+    void saveEvents(const string& filename) const {
         ofstream file(filename);
         for (const auto& e : events) {
-            file << e.serialize();
+            file << e.toCSV() << endl;
         }
         file.close();
     }
@@ -112,21 +109,20 @@ public:
         getline(cin, location);
 
         if (isConflict(date, time)) {
-            cout << " Conflict detected! An event is already scheduled at this time.\n";
+            cout << "Conflict detected! Another event is scheduled at the same time.\n";
             return;
         }
 
-        // Check duplicates by name+date+time
         for (const auto& e : events) {
             if (e.getName() == name && e.getDate() == date && e.getTime() == time) {
-                cout << " Duplicate event found! Not adding.\n";
+                cout << "Duplicate event found! Not adding.\n";
                 return;
             }
         }
 
         events.emplace_back(name, date, time, type, location);
-        saveEvents("events.txt");
-        cout << " Event added successfully!\n";
+        saveEvents("events.csv");
+        cout << "Event added successfully.\n";
     }
 
     void viewEvents() const {
@@ -134,7 +130,8 @@ public:
             cout << "No events scheduled.\n";
             return;
         }
-        cout << "\nAll Events:\n";
+
+        cout << "\n Scheduled Events:\n";
         for (const auto& e : events) {
             e.display();
             cout << "----------------------\n";
@@ -146,36 +143,39 @@ public:
             cout << "No events to delete.\n";
             return;
         }
-        cin.ignore();
-        string nameToDelete;
-        cout << "\nEnter the Event Name to delete: ";
-        getline(cin, nameToDelete);
 
-        auto it = find_if(events.begin(), events.end(), [&](const Event& e) {
-            return e.getName() == nameToDelete;
+        cin.ignore();
+        string name;
+        cout << "Enter Event Name to Delete: ";
+        getline(cin, name);
+
+        auto it = remove_if(events.begin(), events.end(), [&](const Event& e) {
+            return e.getName() == name;
         });
 
         if (it != events.end()) {
-            events.erase(it);
-            saveEvents("events.txt");
-            cout << " Event '" << nameToDelete << "' deleted successfully.\n";
+            events.erase(it, events.end());
+            saveEvents("events.csv");
+            cout << "Event deleted successfully.\n";
         } else {
-            cout << " Event with name '" << nameToDelete << "' not found.\n";
+            cout << "Event not found.\n";
         }
     }
 
     void searchEvents() const {
         cin.ignore();
         string keyword;
-        cout << "\nEnter keyword to search (name or type): ";
+        cout << "Enter keyword to search (name/type): ";
         getline(cin, keyword);
 
-        string kwLower = toLower(keyword);
+        string kw = toLower(keyword);
         bool found = false;
 
         for (const auto& e : events) {
-            if (toLower(e.getName()).find(kwLower) != string::npos ||
-                toLower(e.getType()).find(kwLower) != string::npos) {
+            string name = toLower(e.getName());
+            string type = toLower(e.getType());
+
+            if (name.find(kw) != string::npos || type.find(kw) != string::npos) {
                 e.display();
                 cout << "----------------------\n";
                 found = true;
@@ -183,15 +183,125 @@ public:
         }
 
         if (!found) {
-            cout << "No matching events found.\n";
+            cout << " No matching events found.\n";
         }
+    }
+
+    // ======================
+    //  Timeline Feature
+    // ======================
+    void displayTimelineForDate() {
+        cin.ignore();
+        string date;
+        cout << "\nEnter date to view timeline (DD-MM-YYYY): ";
+        getline(cin, date);
+
+        vector<Event> dayEvents;
+        for (const auto& e : events) {
+            if (e.getDate() == date) {
+                dayEvents.push_back(e);
+            }
+        }
+
+        if (dayEvents.empty()) {
+            cout << "No events scheduled on " << date << ".\n";
+            return;
+        }
+
+        cout << "\n Timeline for " << date << "\n";
+        cout << "----------------------------\n";
+
+        for (int hour = 8; hour <= 20; ++hour) {
+            stringstream ss;
+            ss << (hour < 10 ? "0" : "") << hour << ":00";
+            string slotTime = ss.str();
+
+            bool found = false;
+            for (const auto& e : dayEvents) {
+                if (e.getTime().substr(0, 2) == slotTime.substr(0, 2)) {
+                    cout << slotTime << " | " << e.getName() << "\n";
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                cout << slotTime << " | \n";
+            }
+        }
+    }
+
+    // ======================
+    // Edit Event Feature
+    // ======================
+    void editEvent() {
+        if (events.empty()) {
+            cout << "No events to edit.\n";
+            return;
+        }
+        
+        cin.ignore();
+        string nameToEdit;
+        cout << "Enter the name of the event to edit: ";
+        getline(cin, nameToEdit);
+
+        auto it = find_if(events.begin(), events.end(), [&](const Event& e) {
+            return e.getName() == nameToEdit;
+        });
+
+        if (it == events.end()) {
+            cout << "Event not found.\n";
+            return;
+        }
+
+        // Show current details
+        cout << "\nCurrent details:\n";
+        it->display();
+
+        // Get new details
+        string name, date, time, type, location;
+
+        cout << "Enter new Event Name (or press enter to keep \"" << it->getName() << "\"): ";
+        getline(cin, name);
+        if (name.empty()) name = it->getName();
+
+        cout << "Enter new Date (DD-MM-YYYY) (or press enter to keep \"" << it->getDate() << "\"): ";
+        getline(cin, date);
+        if (date.empty()) date = it->getDate();
+
+        cout << "Enter new Time (HH:MM) (or press enter to keep \"" << it->getTime() << "\"): ";
+        getline(cin, time);
+        if (time.empty()) time = it->getTime();
+
+        cout << "Enter new Type (or press enter to keep \"" << it->getType() << "\"): ";
+        getline(cin, type);
+        if (type.empty()) type = it->getType();
+
+        cout << "Enter new Location (or press enter to keep \"" << it->getLocation() << "\"): ";
+        getline(cin, location);
+        if (location.empty()) location = it->getLocation();
+
+        // Check for conflicts except this event itself
+        for (const auto& e : events) {
+            if (&e != &(*it) && e.getDate() == date && e.getTime() == time) {
+                cout << "Conflict detected with another event at this date and time.\n";
+                return;
+            }
+        }
+
+        // Update event with new details
+        *it = Event(name, date, time, type, location);
+        saveEvents("events.csv");
+        cout << "Event updated successfully.\n";
     }
 };
 
-// Admin login helper
+// =======================
+// Admin Login
+// =======================
 bool adminLogin() {
     string username, password;
-    cout << "Admin Login\nUsername: ";
+    cout << "\n Admin Login\nUsername: ";
     cin >> username;
     cout << "Password: ";
     cin >> password;
@@ -199,19 +309,25 @@ bool adminLogin() {
     return (username == "vinayak" && password == "pccoepune");
 }
 
+// =======================
+// Menus
+// =======================
 void adminMenu(EventManager& manager) {
     int choice;
     while (true) {
-        cout << "\n--- Admin Menu ---\n";
-        cout << "1. Add Event\n2. View Events\n3. Delete Event\n4. Search Events\n5. Logout\n";
+        cout << "\n=== Admin Menu ===\n";
+        cout << "1. Add Event\n2. View Events\n3. Delete Event\n4. Search Events\n5. View Timeline\n6. Edit Event\n7. Logout\n";
         cout << "Enter choice: ";
         cin >> choice;
+
         switch (choice) {
             case 1: manager.addEvent(); break;
             case 2: manager.viewEvents(); break;
             case 3: manager.deleteEvent(); break;
             case 4: manager.searchEvents(); break;
-            case 5: return;
+            case 5: manager.displayTimelineForDate(); break;
+            case 6: manager.editEvent(); break;
+            case 7: return;
             default: cout << "Invalid choice.\n";
         }
     }
@@ -220,24 +336,30 @@ void adminMenu(EventManager& manager) {
 void userMenu(EventManager& manager) {
     int choice;
     while (true) {
-        cout << "\n--- User Menu ---\n";
-        cout << "1. View Events\n2. Search Events\n3. Exit\n";
+        cout << "\n=== User Menu ===\n";
+        cout << "1. View Events\n2. Search Events\n3. View Timeline\n4. Exit\n";
         cout << "Enter choice: ";
         cin >> choice;
+
         switch (choice) {
             case 1: manager.viewEvents(); break;
             case 2: manager.searchEvents(); break;
-            case 3: return;
+            case 3: manager.displayTimelineForDate(); break;
+            case 4: return;
             default: cout << "Invalid choice.\n";
         }
     }
 }
 
+// =======================
+//  Main Program
+// =======================
 int main() {
     EventManager manager;
-    manager.loadEvents("events.txt");
+    manager.loadEvents("events.csv");
 
-    cout << "Welcome to Smart Event Manager\n";
+    cout << " Welcome to Smart Event Manager \n";
+    cout << "Persistent Storage Format: CSV (events.csv)\n";
     cout << "Are you admin? (y/n): ";
     char isAdmin;
     cin >> isAdmin;
@@ -246,11 +368,16 @@ int main() {
         if (adminLogin()) {
             adminMenu(manager);
         } else {
-            cout << "Access denied. Exiting...\n";
+            cout << " Invalid credentials.\n";
         }
     } else {
         userMenu(manager);
     }
+
+    cout << " Goodbye!\n";
+    return 0;
+}
+
 
     cout << "Goodbye!\n";
     return 0;
